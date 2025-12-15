@@ -1,1 +1,2 @@
 tests/instances/** linguist-detectable=false
+deps/** linguist-vendored
