@@ -1,4 +1,8 @@
+
 # or-ml
 
-A collection of operations research and machine learning tools and algorithms.
-The plan is to start with MIP solvers that support learning-based heuristics.
+Eventually a collection of optimization routines for operations research (OR)
+that incorporate machine learning (ML) techniques.
+
+Firstly, a branching based mixed-integer linear programming (MILP) solver
+that supports ML based heuristics.

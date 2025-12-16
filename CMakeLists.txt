@@ -1,14 +1,15 @@
 cmake_minimum_required(VERSION 3.20)
-project(MPSParser LANGUAGES CXX)
+project(or-ml LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_executable(main app/main.cpp)
+add_executable(or-ml app/or-ml.cpp src/mps/mps_parser.cpp)
 
-target_include_directories(main PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/MPSParse
+target_include_directories(or-ml PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/mps
 )
-target_include_directories(main SYSTEM PRIVATE
+
+target_include_directories(or-ml SYSTEM PRIVATE
     ${CMAKE_SOURCE_DIR}/deps/
 )
