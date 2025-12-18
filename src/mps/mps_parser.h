@@ -1,4 +1,3 @@
-
 // Copyright 2025 Kenneth Tjhia
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,11 +29,48 @@
 #ifndef mps_parser_h
 #define mps_parser_h
 
-#include <stdexcept>
+#include <limits>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
+
+namespace mps {
+
+// Assuming this is defined for the target platform
+constexpr double infinity = std::numeric_limits<double>::infinity();
+
+struct StringHash {
+  using hash_type = std::hash<std::string_view>;
+  using is_transparent = void;
+
+  std::size_t operator()(std::string_view str) const {
+    return hash_type{}(str);
+  }
+  // These overloads probably aren't necessary, but whatever.
+  std::size_t operator()(const char *str) const { return hash_type{}(str); }
+  std::size_t operator()(const std::string &str) const {
+    return hash_type{}(str);
+  }
+};
+
+using StringIntMap =
+    std::unordered_map<std::string, int, StringHash, std::equal_to<>>;
+
+enum class SectionType {
+  None,
+  Name,
+  ObjectiveName,
+  ObjectiveSense,
+  Rows,
+  Columns,
+  Rhs,
+  Bounds,
+  EndData
+};
+
+enum class ObjectiveSense { Min, Max };
 
 // Row constraint types
 enum class RowType {
@@ -46,87 +82,58 @@ enum class RowType {
 
 // Variable bound types
 enum class BoundType {
-  UP, // Upper
-  LO, // Lower
-  FX, // Fixed (upper = lower)
-  FR, // Free
-  MI, // Minus infinity
-  PL, // Plus infinity
-  BV, // Binary variable
-  LI, // Integer lower
-  SC, // Semi-continuous (either zero or >= lower bound)
-  UI  // Integer upper
+  Up, // Upper
+  Lo, // Lower
+  Fx, // Fixed (upper = lower)
+  Fr, // Free
+  Mi, // Minus infinity
+  Pl, // Plus infinity
+  Bv, // Binary variable
+  Li, // Integer lower
+  Sc, // Semi-continuous (either zero or >= lower bound)
+  Ui  // Integer upper
 };
 
-namespace detail {
+struct VariableBounds {
+  double lower = -infinity;
+  double upper = infinity;
+}; // TODO: add is_integer, is_binary flags
 
-template <typename Map, typename Key>
-auto at_or_throw(Map &m, Key &&k) -> typename Map::mapped_type & {
-  auto it = m.find(std::forward<Key>(k));
-  if (it == m.end())
-    throw std::out_of_range("key not found");
-  return it->second;
-}
-
-struct StringHash {
-  using hash_type = std::hash<std::string_view>;
-  using is_transparent = void;
-
-  std::size_t operator()(const char *str) const { return hash_type{}(str); }
-  std::size_t operator()(std::string_view str) const {
-    return hash_type{}(str);
-  }
-  std::size_t operator()(const std::string &str) const {
-    return hash_type{}(str);
-  }
+struct MatrixEntry {
+  std::size_t row;
+  std::size_t column;
+  double value;
 };
 
-using StringIntMap =
-    std::unordered_map<std::string, int, StringHash, std::equal_to<>>;
-} // namespace detail
-//
-struct ParsedMPS {
+struct ParsedMps {
   std::string name;
-  int num_rows{};
-  int num_cols{};
-
-  int obj_row{-1};
-  std::string obj_name;
-  // we will always minimize internally
-  std::string obj_sense;
-
+  std::string objective_name;
   std::string rhs_name;
   std::string bound_name;
 
-  // Indices for rows and columns
-  std::vector<std::string> col_names;
+  // we will always convert to min, but record here the original sense
+  ObjectiveSense objective_sense{ObjectiveSense::Min};
+
+  std::size_t num_rows{};
+  std::size_t num_cols{};
+  std::optional<std::size_t> objective_row{};
+
+  std::vector<std::string> column_names;
   std::vector<std::string> row_names;
-  detail::StringIntMap col_indices;
-  detail::StringIntMap row_indices;
-  // std::unordered_map<std::string, int, std::hash<std::string_view>,
-  //                    std::equal_to<>>
-  //     col_index;
-  // std::unordered_map<std::string, int> row_index;
+  StringIntMap column_indices;
+  StringIntMap row_indices;
 
-  // Objective coefficients
-  std::vector<double> obj_coefficients;
+  std::vector<RowType> row_types;
+  std::vector<double> objective_coeffs;
+  std::vector<MatrixEntry> matrix_entries;
+  std::vector<double> rhs_values;
+  std::vector<VariableBounds> variable_bounds;
 
-  // Constraint types and RHS std::vector
-  std::vector<RowType> row_type;
-  std::vector<double> rhs;
-
-  // Contraint matrix A in COO format
-  std::vector<int> A_row;
-  std::vector<int> A_col;
-  std::vector<double> A_val;
-
-  // Variable bounds
-  std::vector<double> lower_bounds;
-  std::vector<double> upper_bounds;
-  // std::vector<bool> is_integer;
-  // std::vector<bool> is_binary;
+  bool validate() const;
+  void convert_to_minimization();
 };
 
-ParsedMPS parse_mps(const std::string_view filename);
+ParsedMps parse_file(const std::string &filename);
 
+} // namespace mps
 #endif

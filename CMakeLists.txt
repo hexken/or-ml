@@ -8,6 +8,7 @@ add_executable(or-ml app/or-ml.cpp src/mps/mps_parser.cpp)
 
 target_include_directories(or-ml PRIVATE
     ${CMAKE_SOURCE_DIR}/src/mps
+    ${CMAKE_SOURCE_DIR}/src/utils
 )
 
 target_include_directories(or-ml SYSTEM PRIVATE
