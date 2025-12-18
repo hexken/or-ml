@@ -106,17 +106,16 @@ struct MatrixEntry {
 };
 
 struct ParsedMps {
-  std::string name;
-  std::string objective_name;
-  std::string rhs_name;
-  std::string bound_name;
+  std::optional<std::string> name{std::nullopt};
+  std::optional<std::string> objective_name{std::nullopt};
+  std::optional<std::string> rhs_name{std::nullopt};
+  std::optional<std::string> bound_name{std::nullopt};
 
   // we will always convert to min, but record here the original sense
   ObjectiveSense objective_sense{ObjectiveSense::Min};
 
   std::size_t num_rows{};
   std::size_t num_cols{};
-  std::optional<std::size_t> objective_row{};
 
   std::vector<std::string> column_names;
   std::vector<std::string> row_names;

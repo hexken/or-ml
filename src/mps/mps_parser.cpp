@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// TODO: validate sections as they are parsed?
 #include "mps_parser.h"
 #include "string_utils.h"
 #include <cassert>
@@ -62,8 +63,22 @@ struct ParserState {
   std::string active_bound_name;
 };
 
-[[noreturn]] void throw_error(std::string_view message, size_t lineno) {
+[[noreturn]] void throw_error(std::string message, size_t lineno) {
   throw std::runtime_error(std::format("Line {}: {}", lineno, message));
+}
+
+void validate_objective_name(ParserState &state) {
+  if (!state.problem.objective_name.has_value()) {
+    throw_error("objective name must be specified before COLUMNS section",
+                state.lineno);
+  }
+}
+
+void validate_problem_name(ParserState &state) {
+  if (!state.problem.name.has_value()) {
+    throw_error("problem name must be specified before ROWS section",
+                state.lineno);
+  }
 }
 
 std::vector<std::string_view>
@@ -81,6 +96,7 @@ void parse_objective_sense_line(const std::vector<std::string_view> &tokens,
                                 ParserState &state);
 void parse_row_line(const std::vector<std::string_view> &tokens,
                     ParserState &state);
+RowType parse_row_type(std::string_view token);
 void parse_column_line(const std::vector<std::string_view> &tokens,
                        ParserState &state);
 void parse_rhs_line(const std::vector<std::string_view> &tokens,
@@ -109,17 +125,19 @@ void parse_line(const std::string &line, ParserState &state) {
     return;
   }
 
+  // Check if section header, handle NAME as special case
   if (std::optional<SectionType> section = detect_section(tokens[0])) {
     state.current_section = *section;
     if (state.current_section == SectionType::Name) {
       if (tokens.size() > 1) {
         state.problem.name = std::string(tokens[1]);
       } else {
-        throw_error("NAME section requires a name", state);
+        throw_error("NAME section requires a name", state.lineno);
       }
     }
     return;
   }
+
   switch (state.current_section) {
   case SectionType::ObjectiveName:
     parse_objective_name_line(tokens, state);
@@ -230,51 +248,20 @@ void parse_row_line(const std::vector<std::string_view> &tokens,
   if (tokens.size() != 2)
     throw_error("invalid ROWS entry", state.lineno);
 
-  int row_index{prob.num_rows++};
-
-  mps::RowType row_type;
-  char type_char{tokens[0][0]};
-  switch (type_char) {
-  case 'N':
-    row_type = mps::RowType::n;
-    if (prob.objective_row == -1) {
-      prob.objective_row = row_index;
-      prob.objective_name = tokens[1];
-    } else if (prob.row_types[prob.obj_row] != mps::RowType::n) {
-
-      throw std::runtime_error(
-          std::format("Line {} : objective row not declared as N", lineno));
-    }
-    break;
-  case 'G':
-    row_type = mps::RowType::g;
-    break;
-  case 'L':
-    row_type = mps::RowType::l;
-    break;
-  case 'E':
-    row_type = mps::RowType::e;
-    break;
-  default:
-    throw std::runtime_error(
-        std::format("Line {} : unknown row type '{}'", lineno, type_char));
+  RowType row_type = parse_row_type(tokens[0]);
+  if (row_type == RowType::N && !state.problem.objective_name.has_value()) {
+    state.problem.objective_name = std::string(tokens[1]);
+    return;
   }
-
-  // TODO: make sure we don't put the objective row in the final constraint
-  // matrix
-  // Register row
-  prob.row_names.emplace_back(tokens[1]);
-  prob.row_indices[prob.row_names.back()] = row_index;
-  prob.row_types.push_back(row_type);
-  prob.rhs_values.push_back(0.0);
+  state.problem.row_names.emplace_back(tokens[1]);
+  state.problem.row_indices[state.problem.row_names.back()] =
+      state.problem.num_rows++;
+  state.problem.row_types.push_back(row_type);
+  state.problem.rhs_values.push_back(0.0);
 }
 
-RowType parse_row_type(std::string_view type_str) {
-  if (type_str.empty()) {
-    throw_error("Empty row type");
-  }
-
-  switch (type_str[0]) {
+RowType parse_row_type(std::string_view token, ParserState &state) {
+  switch (token[0]) {
   case 'N':
     return RowType::N;
   case 'G':
@@ -284,7 +271,45 @@ RowType parse_row_type(std::string_view type_str) {
   case 'E':
     return RowType::E;
   default:
-    throw_error(std::format("Unknown row type: '{}'", type_str));
+    throw_error(std::format("unknown row type: '{}'", token[0]), state.lineno);
+  }
+}
+
+size_t get_or_create_column(std::string_view column_name,
+                            ParsedMps &problem) noexcept {
+  const auto it = problem.column_indices.find(column_name);
+  if (it != problem.column_indices.end()) {
+    return it->second;
+  }
+
+  const size_t column_index = problem.num_cols++;
+  problem.column_names.emplace_back(column_name);
+  problem.column_indices[problem.column_names.back()] = column_index;
+  problem.variable_bounds.emplace_back();
+
+  return column_index;
+}
+
+size_t get_row_index(std::string_view row_name, ParserState &state) {
+  const auto it = state.problem.row_indices.find(row_name);
+  if (it == state.problem.row_indices.end()) {
+    throw_error(std::format("row not found: '{}'", row_name), state.lineno);
+  }
+  return it->second;
+}
+
+void parse_column_line(const std::vector<std::string_view> &tokens,
+                       ParserState &state) {
+  validate_objective_name(state);
+  if (tokens.size() != 3 && tokens.size() != 5) {
+    throw_error("invalid COLUMNS entry", state.lineno);
+  }
+  const size_t column_index = get_or_create_column(tokens[0], state.problem);
+  // Parse coefficient pairs
+  for (std::size_t i = 1; i < tokens.size(); i += 2) {
+    const size_t row_index = get_row_index(tokens[i], state);
+    const double value = string_utils::parse_double(tokens[i + 1]);
+    state.problem.matrix_entries.push_back({row_index, column_index, value});
   }
 }
 } // namespace detail
