@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#ifndef string_utils_h
+#define string_utils_h
+
 #include <string_view>
 
 namespace string_utils {
@@ -24,3 +27,4 @@ constexpr bool is_space(char c) noexcept {
 }
 
 } // namespace string_utils
+#endif

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 // TODO: validate sections as they are parsed?
+// TODO: use brace initialization where possible
 #include "mps_parser.h"
 #include "string_utils.h"
 #include <cassert>
@@ -26,7 +27,7 @@
 #include <utility>
 #include <vector>
 
-namespace mps {
+namespace detail {
 
 namespace keys {
 using namespace std::literals::string_view_literals;
@@ -53,120 +54,58 @@ constexpr std::string_view minus_infinity = "MI"sv;
 constexpr std::string_view plus_infinity = "PL"sv;
 } // namespace keys
 
-namespace detail {
-
 struct ParserState {
-  ParsedMps &problem;
+  mps::ParsedMps &problem;
   mps::SectionType current_section{mps::SectionType::None};
   size_t lineno{0};
-  std::string active_rhs_name;
-  std::string active_bound_name;
 };
 
 [[noreturn]] void throw_error(std::string message, size_t lineno) {
   throw std::runtime_error(std::format("Line {}: {}", lineno, message));
 }
 
-void validate_objective_name(ParserState &state) {
-  if (!state.problem.objective_name.has_value()) {
-    throw_error("objective name must be specified before COLUMNS section",
-                state.lineno);
-  }
-}
+// void validate_objective_name(ParserState &state) {
+//   if (!state.problem.objective_name.has_value()) {
+//     throw_error("objective name must be specified before COLUMNS section",
+//                 state.lineno);
+//   }
+// }
+//
+// void validate_problem_name(ParserState &state) {
+//   if (!state.problem.name.has_value()) {
+//     throw_error("problem name must be specified before ROWS section",
+//                 state.lineno);
+//   }
+// }
 
-void validate_problem_name(ParserState &state) {
-  if (!state.problem.name.has_value()) {
-    throw_error("problem name must be specified before ROWS section",
-                state.lineno);
-  }
-}
-
-std::vector<std::string_view>
-split_tokens_ignore_comments(std::string_view line);
-
-void parse_stream(std::istream &input_stream, ParsedMps &problem);
-void parse_line(const std::string &line, ParserState &state);
-constexpr std::string_view get_section_header(mps::SectionType section);
-void set_section(const std::string_view &section_name);
-std::optional<SectionType> detect_section(std::string_view token);
-void parse_name_line(const std::vector<std::string_view> &tokens);
-void parse_objective_name_line(const std::vector<std::string_view> &tokens,
-                               ParserState &state);
-void parse_objective_sense_line(const std::vector<std::string_view> &tokens,
-                                ParserState &state);
-void parse_row_line(const std::vector<std::string_view> &tokens,
-                    ParserState &state);
-RowType parse_row_type(std::string_view token);
-void parse_column_line(const std::vector<std::string_view> &tokens,
-                       ParserState &state);
-void parse_rhs_line(const std::vector<std::string_view> &tokens,
-                    ParserState &state);
-void parse_bound_line(const std::vector<std::string_view> &tokens,
-                      ParserState &state);
-
-ParsedMps parse_file(const std::string &filename) {
-  // TODO: handle compressed files
-  std::ifstream input_stream{filename};
-
-  ParsedMps problem{};
-  ParserState state{problem};
-
-  for (std::string line; std::getline(input_stream, line);) {
-    parse_line(line, state);
-  }
-  // TODO: validate problem, convert to minimization if necessary?
-  return problem;
-}
-
-void parse_line(const std::string &line, ParserState &state) {
-  std::vector<std::string_view> tokens = split_tokens_ignore_comments(line);
-
-  if (tokens.empty()) {
-    return;
-  }
-
-  // Check if section header, handle NAME as special case
-  if (std::optional<SectionType> section = detect_section(tokens[0])) {
-    state.current_section = *section;
-    if (state.current_section == SectionType::Name) {
-      if (tokens.size() > 1) {
-        state.problem.name = std::string(tokens[1]);
-      } else {
-        throw_error("NAME section requires a name", state.lineno);
-      }
-    }
-    return;
-  }
-
-  switch (state.current_section) {
-  case SectionType::ObjectiveName:
-    parse_objective_name_line(tokens, state);
-    break;
-  case SectionType::ObjectiveSense:
-    parse_objective_sense_line(tokens, state);
-    break;
-  case SectionType::Rows:
-    parse_row_line(tokens, state);
-    break;
-  case SectionType::Columns:
-    parse_column_line(tokens, state);
-    break;
-  case SectionType::Rhs:
-    parse_rhs_line(tokens, state);
-    break;
-  case SectionType::Bounds:
-    parse_bound_line(tokens, state);
-    break;
-  default:
-    break;
-  }
-}
+// std::vector<std::string_view>
+// split_tokens_ignore_comments(std::string_view line);
+//
+// void parse_stream(std::istream &input_stream, ParsedMps &problem);
+// void parse_line(const std::string &line, ParserState &state);
+// constexpr std::string_view get_section_header(mps::mps::SectionType section);
+// void set_section(const std::string_view &section_name);
+// std::optional<mps::SectionType> detect_section(std::string_view token);
+// void parse_name_line(const std::vector<std::string_view> &tokens);
+// void parse_objective_name_line(const std::vector<std::string_view> &tokens,
+//                                ParserState &state);
+// void parse_objective_sense_line(const std::vector<std::string_view> &tokens,
+//                                 ParserState &state);
+// void parse_row_line(const std::vector<std::string_view> &tokens,
+//                     ParserState &state);
+// mps::RowType parse_row_type(std::string_view token);
+// void parse_column_line(const std::vector<std::string_view> &tokens,
+//                        ParserState &state);
+// void parse_rhs_line(const std::vector<std::string_view> &tokens,
+//                     ParserState &state);
+// void parse_bound_line(const std::vector<std::string_view> &tokens,
+//                       ParserState &state);
 
 std::vector<std::string_view>
 split_tokens_ignore_comments(std::string_view line) {
   std::vector<std::string_view> tokens;
-  const char *ptr = line.data();
-  const char *end_ptr = ptr + line.size();
+  const char *ptr{line.data()};
+  const char *end_ptr{ptr + line.size()};
 
   // Skip leading whitespace
   while (ptr < end_ptr && string_utils::is_space(*ptr)) {
@@ -191,7 +130,7 @@ split_tokens_ignore_comments(std::string_view line) {
     if (*ptr == '$')
       break;
 
-    const char *token_start = ptr;
+    const char *token_start{ptr};
 
     // Read token
     while (ptr < end_ptr && !string_utils::is_space(*ptr)) {
@@ -204,43 +143,59 @@ split_tokens_ignore_comments(std::string_view line) {
   return tokens;
 }
 
-constexpr std::string_view get_section_header(SectionType section) {
+constexpr std::string_view get_section_header(mps::SectionType section) {
   switch (section) {
-  case SectionType::Name:
+  case mps::SectionType::Name:
     return keys::name;
-  case SectionType::Rows:
+  case mps::SectionType::Rows:
     return keys::rows;
-  case SectionType::Columns:
+  case mps::SectionType::Columns:
     return keys::columns;
-  case SectionType::Rhs:
+  case mps::SectionType::Rhs:
     return keys::rhs;
-  case SectionType::Bounds:
+  case mps::SectionType::Bounds:
     return keys::bounds;
-  case SectionType::EndData:
+  case mps::SectionType::EndData:
     return keys::end_data;
   default:
     return keys::empty;
   }
 }
 
-std::optional<SectionType> detect_section(std::string_view token) {
+constexpr std::optional<mps::SectionType>
+detect_section(std::string_view token) {
   if (token == keys::name)
-    return SectionType::Name;
-  if (token == keys::rows)
-    return SectionType::Rows;
-  if (token == keys::columns)
-    return SectionType::Columns;
-  if (token == keys::rhs)
-    return SectionType::Rhs;
-  if (token == keys::bounds)
-    return SectionType::Bounds;
-  if (token == keys::end_data)
-    return SectionType::EndData;
-  if (token == keys::objective_sense)
-    return SectionType::ObjectiveSense;
+    return mps::SectionType::Name;
   if (token == keys::object_name)
-    return SectionType::ObjectiveName;
+    return mps::SectionType::ObjectiveName;
+  if (token == keys::objective_sense)
+    return mps::SectionType::ObjectiveSense;
+  if (token == keys::rows)
+    return mps::SectionType::Rows;
+  if (token == keys::columns)
+    return mps::SectionType::Columns;
+  if (token == keys::rhs)
+    return mps::SectionType::Rhs;
+  if (token == keys::bounds)
+    return mps::SectionType::Bounds;
+  if (token == keys::end_data)
+    return mps::SectionType::EndData;
   return std::nullopt;
+}
+
+mps::RowType parse_row_type(std::string_view token, ParserState &state) {
+  switch (token[0]) {
+  case 'N':
+    return mps::RowType::N;
+  case 'G':
+    return mps::RowType::G;
+  case 'L':
+    return mps::RowType::L;
+  case 'E':
+    return mps::RowType::E;
+  default:
+    throw_error(std::format("unknown row type: '{}'", token[0]), state.lineno);
+  }
 }
 
 void parse_row_line(const std::vector<std::string_view> &tokens,
@@ -248,8 +203,9 @@ void parse_row_line(const std::vector<std::string_view> &tokens,
   if (tokens.size() != 2)
     throw_error("invalid ROWS entry", state.lineno);
 
-  RowType row_type = parse_row_type(tokens[0]);
-  if (row_type == RowType::N && !state.problem.objective_name.has_value()) {
+  mps::RowType row_type = parse_row_type(tokens[0], state);
+  if (row_type == mps::RowType::N &&
+      !state.problem.objective_name.has_value()) {
     state.problem.objective_name = std::string(tokens[1]);
     return;
   }
@@ -258,26 +214,14 @@ void parse_row_line(const std::vector<std::string_view> &tokens,
       state.problem.num_rows++;
   state.problem.row_types.push_back(row_type);
   state.problem.rhs_values.push_back(0.0);
-}
-
-RowType parse_row_type(std::string_view token, ParserState &state) {
-  switch (token[0]) {
-  case 'N':
-    return RowType::N;
-  case 'G':
-    return RowType::G;
-  case 'L':
-    return RowType::L;
-  case 'E':
-    return RowType::E;
-  default:
-    throw_error(std::format("unknown row type: '{}'", token[0]), state.lineno);
-  }
+  assert(state.problem.row_names.size() == state.problem.row_types.size());
+  assert(state.problem.row_names.size() == state.problem.row_indices.size());
+  assert(state.problem.row_names.size() == state.problem.rhs_values.size());
 }
 
 size_t get_or_create_column(std::string_view column_name,
-                            ParsedMps &problem) noexcept {
-  const auto it = problem.column_indices.find(column_name);
+                            mps::ParsedMps &problem) noexcept {
+  const auto it{problem.column_indices.find(column_name)};
   if (it != problem.column_indices.end()) {
     return it->second;
   }
@@ -300,17 +244,165 @@ size_t get_row_index(std::string_view row_name, ParserState &state) {
 
 void parse_column_line(const std::vector<std::string_view> &tokens,
                        ParserState &state) {
-  validate_objective_name(state);
   if (tokens.size() != 3 && tokens.size() != 5) {
     throw_error("invalid COLUMNS entry", state.lineno);
   }
-  const size_t column_index = get_or_create_column(tokens[0], state.problem);
+  const size_t column_index{get_or_create_column(tokens[0], state.problem)};
   // Parse coefficient pairs
   for (std::size_t i = 1; i < tokens.size(); i += 2) {
-    const size_t row_index = get_row_index(tokens[i], state);
-    const double value = string_utils::parse_double(tokens[i + 1]);
+    const size_t row_index{get_row_index(tokens[i], state)};
+    const double value{string_utils::parse_double(tokens[i + 1])};
     state.problem.matrix_entries.push_back({row_index, column_index, value});
+  }
+  assert(state.problem.column_names.size() ==
+         state.problem.variable_bounds.size());
+  assert(state.problem.column_names.size() ==
+         state.problem.column_indices.size());
+  assert(state.problem.column_names.size() ==
+         state.problem.variable_bounds.size());
+}
+
+void parse_rhs_line(const std::vector<std::string_view> &tokens,
+                    ParserState &state) {
+  if (tokens.size() != 3 && tokens.size() != 5) {
+    throw_error("invalid RHS entry", state.lineno);
+  }
+  // Check if this is the first RHS vector
+  if (!state.problem.rhs_name.has_value()) {
+    state.problem.rhs_name = tokens[0];
+  } else if (tokens[0] != *state.problem.rhs_name)
+    return;
+
+  for (size_t k = 1; k < tokens.size(); k += 2) {
+    const auto it{state.problem.row_indices.find(tokens[k])};
+    if (it == state.problem.row_indices.end()) {
+      throw_error(std::format("RHS row '{}' not declared", tokens[k]),
+                  state.lineno);
+    }
+    state.problem.rhs_values[it->second] =
+        string_utils::parse_double(tokens[k + 1]);
+  }
+}
+
+void parse_bound_line(const std::vector<std::string_view> &tokens,
+                      ParserState &state) {
+  if (tokens.size() != 4)
+    throw_error("invalid RHS entry", state.lineno);
+
+  // Check if this is the first BOUND vector
+  if (!state.problem.bound_name.has_value()) {
+    state.problem.bound_name = tokens[0];
+  } else if (tokens[0] != *state.problem.bound_name)
+    return;
+
+  const auto it{state.problem.column_indices.find(tokens[2])};
+  if (it == state.problem.column_indices.end()) {
+    throw_error(
+        std::format("BOUNDS variable '{}' not declared in COLUMNS", tokens[2]),
+        state.lineno);
+  }
+  mps::VariableBounds &bounds = state.problem.variable_bounds[it->second];
+  const std::string_view bound_type = tokens[1];
+  const double value{string_utils::parse_double(tokens[3])};
+
+  if (bound_type == keys::upper) {
+    bounds.upper = value;
+  } else if (bound_type == keys::lower) {
+    bounds.lower = value;
+  } else if (bound_type == keys::fixed) {
+    bounds.lower = bounds.upper = value;
+  } else if (bound_type == keys::free) {
+    bounds.lower = -mps::infinity;
+    bounds.upper = mps::infinity;
+  } else if (bound_type == keys::minus_infinity) {
+    bounds.lower = -mps::infinity;
+  } else if (bound_type == keys::plus_infinity) {
+    bounds.upper = mps::infinity;
+  } else {
+    throw_error(std::format("Unknown bound type: '{}'", bound_type),
+                state.lineno);
+  }
+}
+
+void parse_objective_name_line(const std::vector<std::string_view> &tokens,
+                               ParserState &state) {
+  if (tokens.empty()) {
+    throw_error("empty OBJNAME entry", state.lineno);
+  }
+  state.problem.objective_name = tokens[0];
+}
+
+void parse_objective_sense_line(const std::vector<std::string_view> &tokens,
+                                ParserState &state) {
+  if (tokens.empty()) {
+    throw_error("empty OBJSENSE entry", state.lineno);
+  }
+  std::string_view sense_str = tokens[0];
+  if (sense_str == keys::min || sense_str == keys::minimize) {
+    state.problem.objective_sense = mps::ObjectiveSense::Min;
+  } else if (sense_str == keys::max || sense_str == keys::maximize) {
+    state.problem.objective_sense = mps::ObjectiveSense::Max;
+  } else {
+    throw_error(std::format("unknown objective sense: '{}'", sense_str),
+                state.lineno);
+  }
+}
+
+void parse_line(const std::string &line, ParserState &state) {
+  std::vector<std::string_view> tokens = split_tokens_ignore_comments(line);
+
+  if (tokens.empty()) {
+    return;
+  }
+
+  // Check if section header, handle NAME as special case
+  if (std::optional<mps::SectionType> section = detect_section(tokens[0])) {
+    state.current_section = *section;
+    if (state.current_section == mps::SectionType::Name) {
+      if (tokens.size() > 1) {
+        state.problem.name = std::string(tokens[1]);
+      } else {
+        throw_error("NAME section requires a name", state.lineno);
+      }
+    }
+    return;
+  }
+
+  switch (state.current_section) {
+  case mps::SectionType::ObjectiveName:
+    parse_objective_name_line(tokens, state);
+    break;
+  case mps::SectionType::ObjectiveSense:
+    parse_objective_sense_line(tokens, state);
+    break;
+  case mps::SectionType::Rows:
+    parse_row_line(tokens, state);
+    break;
+  case mps::SectionType::Columns:
+    parse_column_line(tokens, state);
+    break;
+  case mps::SectionType::Rhs:
+    parse_rhs_line(tokens, state);
+    break;
+  case mps::SectionType::Bounds:
+    parse_bound_line(tokens, state);
+    break;
+  default:
+    break;
   }
 }
 } // namespace detail
-} // namespace mps
+
+mps::ParsedMps mps::parse_file(const std::string &filename) {
+  // TODO: handle compressed files
+  std::ifstream input_stream{filename};
+
+  ParsedMps problem{};
+  detail::ParserState state{problem};
+
+  for (std::string line; std::getline(input_stream, line);) {
+    parse_line(line, state);
+  }
+  // TODO: validate problem, convert to minimization if necessary?
+  return problem;
+}

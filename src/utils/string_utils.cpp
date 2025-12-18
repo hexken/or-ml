@@ -21,7 +21,7 @@
 namespace string_utils {
 // Helper function to parse double with error handling
 double parse_double(std::string_view str) {
-  double value = 0.0;
+  double value{0.0};
   auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), value);
 
   if (ec != std::errc()) {
