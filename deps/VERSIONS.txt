@@ -1,2 +1,5 @@
 Eigen 5.0.1
 https://gitlab.com/libeigen/eigen/-/tree/5.0.1
+
+doctest 2.4.12
+https://github.com/doctest/doctest/tree/v2.4.12
