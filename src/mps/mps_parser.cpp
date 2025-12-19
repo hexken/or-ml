@@ -56,7 +56,7 @@ constexpr std::string_view plus_infinity = "PL"sv;
 
 struct ParserState {
   mps::ParsedMps &problem;
-  mps::SectionType current_section{mps::SectionType::None};
+  std::optional<mps::SectionType> current_section{std::nullopt};
   size_t lineno{0};
 };
 
@@ -83,7 +83,6 @@ struct ParserState {
 //
 // void parse_stream(std::istream &input_stream, ParsedMps &problem);
 // void parse_line(const std::string &line, ParserState &state);
-// constexpr std::string_view get_section_header(mps::mps::SectionType section);
 // void set_section(const std::string_view &section_name);
 // std::optional<mps::SectionType> detect_section(std::string_view token);
 // void parse_name_line(const std::vector<std::string_view> &tokens);
@@ -141,25 +140,6 @@ split_tokens_ignore_comments(std::string_view line) {
   }
 
   return tokens;
-}
-
-constexpr std::string_view get_section_header(mps::SectionType section) {
-  switch (section) {
-  case mps::SectionType::Name:
-    return keys::name;
-  case mps::SectionType::Rows:
-    return keys::rows;
-  case mps::SectionType::Columns:
-    return keys::columns;
-  case mps::SectionType::Rhs:
-    return keys::rhs;
-  case mps::SectionType::Bounds:
-    return keys::bounds;
-  case mps::SectionType::EndData:
-    return keys::end_data;
-  default:
-    return keys::empty;
-  }
 }
 
 constexpr std::optional<mps::SectionType>
@@ -230,6 +210,7 @@ size_t get_or_create_column(std::string_view column_name,
   problem.column_names.emplace_back(column_name);
   problem.column_indices[problem.column_names.back()] = column_index;
   problem.variable_bounds.emplace_back();
+  problem.objective_coeffs.push_back(0.0);
 
   return column_index;
 }
@@ -250,8 +231,16 @@ void parse_column_line(const std::vector<std::string_view> &tokens,
   const size_t column_index{get_or_create_column(tokens[0], state.problem)};
   // Parse coefficient pairs
   for (std::size_t i = 1; i < tokens.size(); i += 2) {
-    const size_t row_index{get_row_index(tokens[i], state)};
-    const double value{string_utils::parse_double(tokens[i + 1])};
+    double value{string_utils::parse_double(tokens[i + 1])};
+
+    std::string_view row_name = tokens[i];
+    if (row_name == *state.problem.objective_name) {
+      if (state.problem.objective_sense == mps::ObjectiveSense::Max)
+        value = -value;
+      state.problem.objective_coeffs[column_index] = value;
+      continue;
+    }
+    const size_t row_index{get_row_index(row_name, state)};
     state.problem.matrix_entries.push_back({row_index, column_index, value});
   }
   assert(state.problem.column_names.size() ==
@@ -260,6 +249,8 @@ void parse_column_line(const std::vector<std::string_view> &tokens,
          state.problem.column_indices.size());
   assert(state.problem.column_names.size() ==
          state.problem.variable_bounds.size());
+  assert(state.problem.column_names.size() ==
+         state.problem.objective_coeffs.size());
 }
 
 void parse_rhs_line(const std::vector<std::string_view> &tokens,
@@ -326,15 +317,15 @@ void parse_bound_line(const std::vector<std::string_view> &tokens,
 
 void parse_objective_name_line(const std::vector<std::string_view> &tokens,
                                ParserState &state) {
-  if (tokens.empty()) {
-    throw_error("empty OBJNAME entry", state.lineno);
+  if (tokens.size() != 1) {
+    throw_error("invalid OBJNAME entry", state.lineno);
   }
   state.problem.objective_name = tokens[0];
 }
 
 void parse_objective_sense_line(const std::vector<std::string_view> &tokens,
                                 ParserState &state) {
-  if (tokens.empty()) {
+  if (tokens.size() != 1) {
     throw_error("empty OBJSENSE entry", state.lineno);
   }
   std::string_view sense_str = tokens[0];
@@ -368,7 +359,7 @@ void parse_line(const std::string &line, ParserState &state) {
     return;
   }
 
-  switch (state.current_section) {
+  switch (*state.current_section) {
   case mps::SectionType::ObjectiveName:
     parse_objective_name_line(tokens, state);
     break;
@@ -393,6 +384,16 @@ void parse_line(const std::string &line, ParserState &state) {
 }
 } // namespace detail
 
+void convert_to_minimization(mps::ParsedMps &problem) {
+  if (problem.objective_sense == mps::ObjectiveSense::Max) {
+    for (auto &entry : problem.matrix_entries) {
+      if (problem.row_types[entry.row] == mps::RowType::N) {
+        entry.value = -entry.value;
+      }
+    }
+  }
+}
+
 mps::ParsedMps mps::parse_file(const std::string &filename) {
   // TODO: handle compressed files
   std::ifstream input_stream{filename};
@@ -403,6 +404,18 @@ mps::ParsedMps mps::parse_file(const std::string &filename) {
   for (std::string line; std::getline(input_stream, line);) {
     parse_line(line, state);
   }
-  // TODO: validate problem, convert to minimization if necessary?
+  if (!problem.name.has_value()) {
+    throw std::runtime_error("MPS parse error: problem NAME not specified");
+  }
+  if (!problem.objective_name.has_value()) {
+    throw std::runtime_error("MPS parse error: objective name not specified");
+  }
+  if (problem.num_rows == 0) {
+    throw std::runtime_error("MPS parse error: no ROWS specified");
+  }
+  if (problem.num_cols == 0) {
+    throw std::runtime_error("MPS parse error: no COLUMNS specified");
+  }
+  // we checked that sizes of containers are consistent during parsing
   return problem;
 }

@@ -97,7 +97,7 @@ enum class BoundType {
 struct VariableBounds {
   double lower = -infinity;
   double upper = infinity;
-}; // TODO: add is_integer, is_binary flags
+};
 
 struct MatrixEntry {
   std::size_t row;

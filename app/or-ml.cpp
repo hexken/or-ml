@@ -3,7 +3,7 @@
 #include <iostream>
 
 int main() {
-  std::string filename{"tests/instances/chip.mps"};
+  const std::string filename{"tests/instances/chip.mps"};
   auto prob = mps::parse_file(filename);
   Eigen::MatrixXd A(2, 2);
   A << 1, 2, 3, 4;
